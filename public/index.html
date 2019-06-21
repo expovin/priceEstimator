@@ -129,6 +129,7 @@
                                     <div class="input-group-text">Hostname: </div>
                                 </div>
                                 <input type="text" class="form-control" id="hostname">
+
                             </div>
 
                             <div class="input-group">
@@ -153,18 +154,37 @@
                                 <input type="text" class="form-control" id="userDirectory">
                             </div>
 
+                            <div class="input-group">
+                                <div class="input-group-prepend mr-2">
+                                    <div class="input-group-text"><b>Certificates:</b></div>
+                                </div>
+                            </div>
 
                             <div class="input-group">
                                 <div class="input-group-prepend mr-2">
-                                    <div class="input-group-text">Certificate: </div>
+                                    <div class="input-group-text">root.pem: </div>
                                 </div>
-                                <input type="file" class="form-control" id="certificate">
+                                <input type="file" class="form-control" id="rootpem">
+                            </div>
+
+                            <div class="input-group">
+                                <div class="input-group-prepend mr-2">
+                                    <div class="input-group-text">client.pem: </div>
+                                </div>
+                                <input type="file" class="form-control" id="clientpem">
+                            </div>
+
+                            <div class="input-group">
+                                <div class="input-group-prepend mr-2">
+                                    <div class="input-group-text">client_key.pem: </div>
+                                </div>
+                                <input type="file" class="form-control" id="clientkeypem">
                             </div>
 
 
                             <div class="text-right mt-3">
-                                <button type="submit" class="btn btn-raised text-white qlikbutton text-center"
-                                    id="submitAssess">Submit</button>
+                                <button type="submit" class="btn btn-raised text-white qlikbutton text-center" id="submitAssess" onclick="assessClick()" > Submit</button>
+
                             </div>
 
                         </form>
@@ -283,6 +303,8 @@
 <script src="https://unpkg.com/bootstrap-material-design@4.1.1/dist/js/bootstrap-material-design.js"
     integrity="sha384-CauSuKpEqAFajSpkdjv3z9t8E7RlpJ1UP0lKM/+NdtSarroVKu069AlsRPKkFBz9"
     crossorigin="anonymous"></script>
+
+    <script type="text/javascript" src="javascript/submit.js"></script>
 
 <script>
     $('body').bootstrapMaterialDesign();

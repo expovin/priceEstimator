@@ -1,8 +1,14 @@
 const enigma = require('enigma.js');
 var serializeapp = require('serializeapp')
-const enigmaConfig = require('../conf/enigma');
+//const enigmaConfig = require('../conf/enigma');
 const Config = require('../conf/settings');
 const settings = new Config();
+const { base64encode, base64decode } = require('nodejs-base64');
+const WebSocket = require('ws');
+const schema = require('enigma.js/schemas/12.20.0.json');
+const fs = require('fs');
+const path = require('path');
+
 
 class QIX {
 
@@ -13,29 +19,110 @@ class QIX {
         this.objId;
         this.serializedApp;
         this.qix;
+        this.SessionDetailsObj;
+        this.SessionDetailsId;
+        this.SessionDetailsData;
+        this.Promises=[];
+        this.SessionDetailsmatrix=[];
         console.log("Instanziato Classe QIX "+this.MonApp);
+
     }
 
+    openApp(appId){
 
-    init(){
-        console.log("Called OpenEngine");
-        return new Promise ( (fulfill, reject) => {
-            enigma.create(enigmaConfig)
-            .open()
-            .then((qix) => {
-                console.log("QIX Engine correctly opened");
-                this.qix=qix;  
-                return this.qix.openDoc({qDocName:this.MonApp})
-            }, err => { reject("Error opening Document :"+err); })
+        console.log("appId pre : "+appId);
+        if (typeof appId === 'undefined' || appId === null)
+            appId=this.MonApp
+
+        console.log("appId post : "+appId);
+        return new Promise ((fulfill, reject) =>{
+            console.log("Opening AppId "+appId);
+            this.qix.openDoc({qDocName:appId})
             .then(qdoc => {
                 this.qdoc=qdoc;
                 return this.serialize();
             }, err => { reject("Error serializing Document :"+err); })
             .then(data =>{
                 this.serializedApp=data;
-                fulfill("Initialization done");
+                return this.getSheetByName('Session Details')[0].qChildren.filter( element =>{ return element.qProperty.title === "Session Details"})
+            })             
+            .then((sd) =>{
+                this.SessionDetailsId = sd[0].qProperty.qInfo.qId;
+                return this.qdoc.getObject(this.SessionDetailsId)
+            })   
+            .then((SessionDetailsObj) =>{
+                this.SessionDetailsObj=SessionDetailsObj;
+                return this.SessionDetailsObj.getLayout()
+            })                    
+            .then((layout)=>{
+                
+                this.qcy=layout.qHyperCube.qSize.qcy;
+                var page=Math.ceil(this.qcy/900);
+                return this.getHypercubeData(page)
             })
+            .then( data =>{
+                this.SessionDetailsmatrix = [].concat.apply([], this.SessionDetailsmatrix);
+                return this.getSheetByName('Performance')[0].qChildren.filter( element =>{ return element.qProperty.title === "Performance Summary"})
+                
+            })    
+
+            .then((sd) =>{
+                return this.qdoc.getObject(sd[0].qProperty.qInfo.qId)
+            })   
+            .then((SessionDetailsObj) =>{
+                return SessionDetailsObj.getLayout()
+            })                    
+            .then((layout)=>{
+                console.log(layout);
+                this.qcy=layout.qHyperCube.qSize.qcy;
+                var page=Math.ceil(this.qcy/900);
+                fulfill("Initialization done");
+                //return this.getHypercubeData(page)
+            })
+
             .catch(error => reject(error))
+        })
+    }
+
+
+    init(params){
+
+        //const readCert = filename => fs.readFileSync(path.resolve(__dirname, certificatesPath, filename));
+
+        return new Promise ( (fulfill, reject) => {
+
+            process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
+            const enigmaConfig = {
+                schema,
+              //  mixins,
+                url: 'wss://'+params.host+":"+params.port+"/app/engineData",
+                // Notice the non-standard second parameter here, this is how you pass in
+                // additional configuration to the 'ws' npm library, if you use a different
+                // library you may configure this differently:
+                createSocket: url => new WebSocket(url, {
+                  ca: [base64decode(params.rootPem)],
+                  key: base64decode(params.clientKey),
+                  cert: base64decode(params.clientPem),
+                  headers: {
+                    'X-Qlik-User':`UserDirectory=${encodeURIComponent(params.userDir)};UserId=${encodeURIComponent(params.userName)}`,
+                  },
+                }),
+            }
+
+            enigma.create(enigmaConfig)
+            .open()
+            .then((qix) => {
+                console.log("QIX Engine correctly opened");
+                this.qix=qix;  
+                fulfill("Initialization done");
+            }, err => { 
+                console.log(err);
+                reject(err)  
+            })
+            .catch(error => {
+                console.log(error)
+                reject(error)
+            })
         })
     }
 
@@ -58,8 +145,10 @@ class QIX {
     getMasterObjectByName(name) { return this.serializedApp.masterobjects.filter( element => { return element.qProperty.qMetaDef.title === name })}
     getDataConnectionByName(name) { return this.serializedApp.dataconnections.filter( element => { return element.qName === name })}
 
+    getSessionDetailsObj() { return this.SessionDetailsObj}
+    getSessionDetailsData() { return this.SessionDetailsData }
 
-
+    getSessionMatrix() {return this.SessionDetailsmatrix}
 
     serialize(){
         return new Promise( (fulfill, reject) =>{
@@ -68,6 +157,19 @@ class QIX {
             .catch ( error => reject(error))
         })
         
+    }
+
+    getDocList(){
+        return new Promise ((fulfill, reject) =>{
+            this.qix.getDocList()
+            .then( docList =>{
+                var MonApp = docList.filter( element =>{ return ((element.qDocName === "Operations Monitor") && (element.qMeta.stream.name === "Monitoring apps"))})
+                this.MonApp = MonApp[0].qDocId
+                console.log("App Found "+this.MonApp);
+                fulfill(MonApp[0]);
+            })
+            .catch( error => reject(error))
+        })
     }
 
     closeEngine(){
@@ -90,86 +192,35 @@ class QIX {
 
     }
 
-    getDocList() {  
-        return new Promise ( (fulfill, reject) =>{
-            this.qix.getDocList()
-            .then(apps => {
-                fulfill(apps);
-            })
-            .catch( error => {reject(error)})
-        })
-    }
-
-
-
-    getAllInfos() {  
-        return new Promise ( (fulfill, reject) =>{
-            this.appObj.getAllInfos()
-            .then(info => {
-                fulfill(info);
-            })
-            .catch( error => {reject(error)})
-        })
-    }
-
-    getField(fieldName) {  
-        return new Promise ( (fulfill, reject) =>{
-            this.appObj.getField({qFieldName:fieldName})
-            .then(fieldObj => {
-                this.fieldObj=fieldObj;
-                fulfill(fieldObj);
-            })
-            .catch( error => {reject(error)})
-        })
-    }
     
-    getObject(qId) {  
-        return new Promise ( (fulfill, reject) =>{
-            this.appObj.getObject({qId:qId})
-            .then(objId => {
-                this.objId=objId;
-                fulfill(objId);
-            })
-            .catch( error => {reject(error)})
-        })
-    }
+    getHypercubeData(page) {  
 
-    getLayout(qId) {  
-        return new Promise ( (fulfill, reject) =>{
-            this.appObj.getLayout({qId:qId})
-            .then(objId => {
-                this.objId=objId;
-                fulfill(objId);
-            })
-            .catch( error => {reject(error)})
-        })
-    }
+        if(page-1 > 0)
+           this.getHypercubeData(--page);    
 
-    getDimension(qId) {  
-        return new Promise ( (fulfill, reject) =>{
-            this.appObj.getDimension({qId:qId})
-            .then(objId => {
-                this.DimensionId.push(objId);
-                fulfill(objId);
-            })
-            .catch( error => {reject(error)})
+        var _this=this;
+        var p = new Promise ( (fulfill, reject) =>{
+                this.Promises.push(
+                    this.SessionDetailsObj.getHyperCubeData({qPath: "/qHyperCubeDef",		"qPages": [
+                        {
+                            "qLeft": 0,
+                            "qTop": (page)*900,
+                            "qWidth": 11,
+                            "qHeight": 900
+                        }]})
+                    .then(hypercube => {
+                        _this.SessionDetailsmatrix.push(hypercube[0].qMatrix);
+                         fulfill(hypercube);
+                    })
+                    .catch( error => {reject(error)})
+                )
+
+                Promise.all(this.Promises)
+                .then( () =>{
+                       fulfill(_this.SessionDetailsmatrix);
+                })                
         })
-    }
-    
-    getHypercubeData() {  
-        return new Promise ( (fulfill, reject) =>{
-            this.objId.getHyperCubeData({qPath: "/qHyperCubeDef",		"qPages": [
-                {
-                    "qLeft": 0,
-                    "qTop": 0,
-                    "qWidth": 11,
-                    "qHeight": 100
-                }]})
-            .then(hypercube => {
-                fulfill(hypercube);
-            })
-            .catch( error => {reject(error)})
-        })
+        return p;
     }
 
 }

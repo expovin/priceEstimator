@@ -4,7 +4,13 @@ qix = new QIX();
 
 qix.init()
 .then( () =>{
-    console.log(qix.getBookmarks())
+    
+    qix.getDocList()
+    .then( docList =>{
+        console.log(docList)
+    })
+    
+    
 })
 
 
